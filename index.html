@@ -77,7 +77,7 @@
             <div id="pendingMemberList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </section>
 
-        <!-- Tab: Payment Requests (Monthly) -->
+        <!-- Tab: Payment Requests (Monthly Only) -->
         <section id="s-payments" class="section-hide space-y-6">
             <h3 class="text-xl font-black italic text-blue-400 flex items-center gap-2 uppercase tracking-tighter"><i data-lucide="clock"></i> Pending Payment Verification</h3>
             <div id="pendingPaymentList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
@@ -202,7 +202,7 @@
         }
 
         function initAdminData() {
-            // Stats & Member Count (Direct Count Fixes Negative issue)
+            // Stats
             db.collection("members").where("status", "==", "active").onSnapshot(snap => {
                 document.getElementById('statMembers').innerText = snap.size + ' জন';
             });
@@ -213,21 +213,21 @@
                 }
             });
 
-            // Pending Membership Approval
+            // ১. মেম্বার এপ্রুভাল (এখান থেকেই এখন ব্যালেন্স যোগ হবে)
             db.collection("members").where("status", "==", "pending").onSnapshot(snap => {
                 const list = document.getElementById('pendingMemberList'); list.innerHTML = "";
                 snap.forEach(doc => {
                     const m = doc.data();
                     list.innerHTML += `<div class="glass-card p-6 border-b-4 border-yellow-500">
                         <h4 class="font-black text-lg uppercase tracking-tight">${m.name}</h4>
-                        <p class="text-[9px] text-slate-400 font-bold mb-4">PHONE: ${m.phone} | Trx: ${m.reg_fee_trx}</p>
+                        <p class="text-[9px] text-slate-400 font-bold mb-4">PHONE: ${m.phone} | Trx: ${m.reg_trx || 'N/A'}</p>
                         <button onclick="approveMember('${m.phone}')" class="w-full btn-gradient py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg">Approve & Active</button>
                     </div>`;
                 });
             });
 
-            // Pending Payments
-            db.collection("payments").where("status", "==", "pending").onSnapshot(snap => {
+            // ২. পেমেন্ট ভেরিফিকেশন (শুধুমাত্র মাসিক চাঁদা দেখাবে, রেজিস্ট্রেশন নয়)
+            db.collection("payments").where("status", "==", "pending").where("type", "==", "monthly").onSnapshot(snap => {
                 const list = document.getElementById('pendingPaymentList'); list.innerHTML = "";
                 snap.forEach(doc => {
                     const p = doc.data();
@@ -244,7 +244,7 @@
             db.collection("payments").where("status", "==", "confirmed").onSnapshot(snap => {
                 const table = document.getElementById('historyTable'); table.innerHTML = "";
                 let historyDocs = []; snap.forEach(doc => { let d = doc.data(); d.id = doc.id; historyDocs.push(d); });
-                historyDocs.sort((a,b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0)).forEach(p => {
+                historyDocs.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).forEach(p => {
                     table.innerHTML += `<tr class="border-b border-slate-800/40"><td class="p-6 uppercase">${p.name}</td><td class="p-6 text-emerald-400 italic">৳ ${p.amount}</td><td class="p-6 text-[10px] opacity-50 uppercase">${p.method} | ${p.trxId}</td><td class="p-6 text-[10px] opacity-40">${p.timestamp ? p.timestamp.toDate().toLocaleDateString('bn-BD') : ''}</td></tr>`;
                 });
             });
@@ -253,7 +253,7 @@
             db.collection("expenses").onSnapshot(snap => {
                 const table = document.getElementById('expenseTable'); table.innerHTML = "";
                 let docs = []; snap.forEach(doc => { let d = doc.data(); d.id = doc.id; docs.push(d); });
-                docs.sort((a,b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0)).forEach(e => {
+                docs.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).forEach(e => {
                     table.innerHTML += `<tr class="border-b border-slate-800/40"><td class="p-6">${e.desc}</td><td class="p-6 text-red-400 italic">৳ ${e.amount}</td><td class="p-6 opacity-30 text-[10px] uppercase">${e.timestamp ? e.timestamp.toDate().toLocaleDateString('bn-BD') : ''}</td><td class="p-6 text-right"><button onclick="deleteExp('${e.id}', ${e.amount})" class="text-red-500/20 hover:text-red-500 transition"><i data-lucide="trash-2" class="w-5 h-5"></i></button></td></tr>`;
                 });
                 lucide.createIcons();
@@ -272,22 +272,35 @@
 
         // Action Functions
         async function approveMember(phone) {
-            if(!confirm("আপনি কি নিশ্চিত?")) return;
+            if(!confirm("নিবন্ধন নিশ্চিত করতে চান? এটি ২০০ টাকা ফান্ডে যোগ করবে।")) return;
             const batch = db.batch();
+            
+            // ১. মেম্বার একটিভ
             batch.update(db.collection("members").doc(phone), { status: 'active' });
+            
+            // ২. ফান্ডে ২০০ টাকা যোগ
             batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(200) });
-            const paySnap = await db.collection("payments").where("phone", "==", phone).where("status", "==", "pending").get();
+            
+            // ৩. ঐ ইউজারের রেজিস্ট্রেশন পেমেন্টটি খুঁজে বের করে কনফার্ম করা
+            const paySnap = await db.collection("payments")
+                .where("phone", "==", phone)
+                .where("type", "==", "registration")
+                .where("status", "==", "pending")
+                .get();
+            
             paySnap.forEach(doc => batch.update(db.collection("payments").doc(doc.id), { status: 'confirmed' }));
+            
             await batch.commit();
-            alert("সদস্য এপ্রুভ হয়েছে এবং ২০০ টাকা ফান্ডে যোগ হয়েছে!");
+            alert("সদস্য এপ্রুভ হয়েছে এবং ২০০ টাকা ফান্ডে যুক্ত হয়েছে!");
         }
 
         async function approvePayment(pid, amt) {
+            if(!confirm("পেমেন্ট নিশ্চিত করতে চান?")) return;
             const batch = db.batch();
             batch.update(db.collection("payments").doc(pid), { status: 'confirmed' });
             batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(amt) });
             await batch.commit();
-            alert("পেমেন্ট কনফার্ম হয়েছে!");
+            alert("পেমেন্ট সফলভাবে যোগ করা হয়েছে!");
         }
 
         document.getElementById('expForm').onsubmit = async (e) => {

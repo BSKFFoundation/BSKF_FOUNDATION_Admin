@@ -12,7 +12,6 @@
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
 
     <style>
         body { font-family: 'Hind Siliguri', sans-serif; background: #0b0f1a; color: #f1f5f9; padding-bottom: 100px; }
@@ -47,7 +46,7 @@
             <div class="bg-emerald-500 p-2 rounded-xl"><i data-lucide="layout-grid" class="w-5 h-5 text-white"></i></div>
             <h1 class="text-xl font-black italic uppercase tracking-tighter">Admin <span class="text-emerald-500">BSKF</span></h1>
         </div>
-        <button onclick="auth.signOut()" class="bg-red-500/10 text-red-500 p-2 rounded-xl border border-red-500/20"><i data-lucide="power" class="w-5 h-5"></i></button>
+        <button onclick="logout()" class="bg-red-500/10 text-red-500 p-2 rounded-xl border border-red-500/20"><i data-lucide="power" class="w-5 h-5"></i></button>
     </header>
 
     <!-- Main Content -->
@@ -65,19 +64,27 @@
                     <h3 id="statMembers" class="text-3xl font-black text-blue-400">০ জন</h3>
                 </div>
                 <div class="glass-card p-8 border-l-8 border-red-500">
-                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Total Expense</p>
-                    <h3 id="statExpense" class="text-3xl font-black text-red-500">৳ ০</h3>
+                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Monthly Collection (Feb)</p>
+                    <h3 id="statMonthly" class="text-3xl font-black text-yellow-500">৳ ০</h3>
+                </div>
+            </div>
+
+            <!-- Monthly Contributor List -->
+            <div class="glass-card p-6 border border-slate-800">
+                <h4 class="text-lg font-black mb-4 italic text-emerald-400 uppercase tracking-tighter">চলতি মাসের চাঁদা প্রদানকারী</h4>
+                <div id="monthlyList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Contributor items here -->
                 </div>
             </div>
         </section>
 
-        <!-- Tab: Pending Member Approval -->
+        <!-- Tab: Requests -->
         <section id="s-pending" class="section-hide space-y-6">
             <h3 class="text-xl font-black italic text-emerald-400 flex items-center gap-2 uppercase tracking-tighter"><i data-lucide="user-plus"></i> Pending Membership Requests</h3>
             <div id="pendingMemberList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </section>
 
-        <!-- Tab: Payment Requests (Monthly Only) -->
+        <!-- Tab: Payments -->
         <section id="s-payments" class="section-hide space-y-6">
             <h3 class="text-xl font-black italic text-blue-400 flex items-center gap-2 uppercase tracking-tighter"><i data-lucide="clock"></i> Pending Payment Verification</h3>
             <div id="pendingPaymentList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
@@ -85,11 +92,11 @@
 
         <!-- Tab: History -->
         <section id="s-history" class="section-hide space-y-6">
-            <h3 class="text-xl font-black italic text-emerald-400 flex items-center gap-2 uppercase tracking-tighter"><i data-lucide="history"></i> জমা দানের ইতিহাস</h3>
+            <h3 class="text-xl font-black italic text-emerald-400 flex items-center gap-2 uppercase tracking-tighter"><i data-lucide="history"></i> সর্বমোট জমা দানের ইতিহাস</h3>
             <div class="glass-card overflow-x-auto border border-slate-800">
-                <table class="w-full text-left text-sm font-bold min-w-[600px]">
+                <table class="w-full text-left text-sm font-bold min-w-[700px]">
                     <thead class="bg-slate-800/50 text-[10px] uppercase font-black text-slate-500 tracking-widest">
-                        <th class="p-6">সদস্য</th><th class="p-6">পরিমাণ</th><th class="p-6">মেথড/TRX</th><th class="p-6">তারিখ</th>
+                        <th class="p-6">সদস্য ও ফোন</th><th class="p-6">পরিমাণ</th><th class="p-6">পেমেন্ট নম্বর ও TRX</th><th class="p-6">ধরন</th><th class="p-6">তারিখ</th>
                     </thead>
                     <tbody id="historyTable" class="divide-y divide-slate-800/50"></tbody>
                 </table>
@@ -152,43 +159,50 @@
     </nav>
 
     <script>
+        // অ্যাডমিন পাসওয়ার্ড ও নম্বর পরিবর্তন (এখানে পরিবর্তন করলে যে কেউ লগইন করতে পারবে)
+        const ADMIN_PHONE = "01815579900"; 
+        const ADMIN_PASS = "admin123"; 
+
         const firebaseConfig = {
-  apiKey: "AIzaSyC4e8beeMrxnOU0azJtnwMpduvf6LMfwZs",
-  authDomain: "bskf-9ca59.firebaseapp.com",
-  projectId: "bskf-9ca59",
-  storageBucket: "bskf-9ca59.firebasestorage.app",
-  messagingSenderId: "94830736952",
-  appId: "1:94830736952:web:e285f0bcc40e87cca598cd",
-  measurementId: "G-CE5EH5N2S6"
-};
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        lucide.createIcons();
-
-        // ১. অটো লগইন চেক
-        auth.onAuthStateChanged(async (user) => {
-            if (user) {
-                const phone = user.email.split('@')[0];
-                const doc = await db.collection("members").doc(phone).get();
-                if(doc.exists && (doc.data().role === "admin" || phone === "01707383281")) {
-                    document.getElementById('loginScreen').classList.add('hidden');
-                    document.getElementById('appHeader').classList.remove('hidden');
-                    document.getElementById('mainPanel').classList.remove('hidden');
-                    document.getElementById('bottomNav').classList.remove('hidden');
-                    initAdminData();
-                } else { alert("আপনার এডমিন অ্যাক্সেস নেই!"); auth.signOut(); }
-            } else {
-                document.getElementById('loginScreen').classList.remove('hidden');
-            }
-        });
-
-        document.getElementById('adminLoginForm').onsubmit = async (e) => {
-            e.preventDefault();
-            try { await auth.signInWithEmailAndPassword(document.getElementById('aPhone').value + "@bskf.com", document.getElementById('aPass').value); }
-            catch (err) { alert("ভুল তথ্য!"); }
+            apiKey: "AIzaSyC4e8beeMrxnOU0azJtnwMpduvf6LMfwZs",
+            authDomain: "bskf-9ca59.firebaseapp.com",
+            projectId: "bskf-9ca59",
+            storageBucket: "bskf-9ca59.firebasestorage.app",
+            messagingSenderId: "94830736952",
+            appId: "1:94830736952:web:e285f0bcc40e87cca598cd",
+            measurementId: "G-CE5EH5N2S6"
         };
 
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        lucide.createIcons();
+
+        // লগইন ম্যানেজমেন্ট
+        window.onload = () => {
+            if (localStorage.getItem("adminAuth") === "true") showPanel();
+        };
+
+        document.getElementById('adminLoginForm').onsubmit = (e) => {
+            e.preventDefault();
+            const p = document.getElementById('aPhone').value;
+            const pass = document.getElementById('aPass').value;
+            if (p === ADMIN_PHONE && pass === ADMIN_PASS) {
+                localStorage.setItem("adminAuth", "true");
+                showPanel();
+            } else { alert("ভুল তথ্য দিয়েছেন!"); }
+        };
+
+        function showPanel() {
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('appHeader').classList.remove('hidden');
+            document.getElementById('mainPanel').classList.remove('hidden');
+            document.getElementById('bottomNav').classList.remove('hidden');
+            initData();
+        }
+
+        function logout() { localStorage.removeItem("adminAuth"); location.reload(); }
+
+        // ট্যাব সুইচিং
         function switchTab(id) {
             ['overview', 'pending', 'payments', 'history', 'expense', 'settings'].forEach(t => {
                 const sec = document.getElementById('s-' + t);
@@ -199,14 +213,10 @@
             document.getElementById('s-' + id).classList.remove('section-hide');
             document.getElementById('n-' + id).classList.add('nav-active');
             document.getElementById('n-' + id).classList.remove('text-slate-500');
-            window.scrollTo(0,0);
         }
 
-        function initAdminData() {
-            // Stats
-            db.collection("members").where("status", "==", "active").onSnapshot(snap => {
-                document.getElementById('statMembers').innerText = snap.size + ' জন';
-            });
+        function initData() {
+            // Stats & Overall Balance
             db.collection("stats").doc("summary").onSnapshot(doc => {
                 if(doc.exists) {
                     document.getElementById('statFund').innerText = '৳ ' + (doc.data().fund || 0).toLocaleString('bn-BD');
@@ -214,53 +224,129 @@
                 }
             });
 
-            // ১. মেম্বার এপ্রুভাল (এখান থেকেই এখন ব্যালেন্স যোগ হবে)
+            db.collection("members").where("status", "==", "active").onSnapshot(snap => {
+                document.getElementById('statMembers').innerText = snap.size + ' জন';
+            });
+
+            // Monthly Summary (Current Month)
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            
+            db.collection("payments")
+                .where("status", "==", "confirmed")
+                .where("type", "==", "monthly")
+                .onSnapshot(snap => {
+                    let totalMonthly = 0;
+                    const list = document.getElementById('monthlyList');
+                    list.innerHTML = "";
+                    
+                    snap.forEach(doc => {
+                        const p = doc.data();
+                        const pDate = p.timestamp.toDate();
+                        if(pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear) {
+                            totalMonthly += p.amount;
+                            list.innerHTML += `
+                                <div class="bg-slate-800/40 p-3 rounded-xl flex justify-between items-center border border-slate-700/50">
+                                    <div>
+                                        <p class="font-black text-sm text-white uppercase">${p.name}</p>
+                                        <p class="text-[10px] text-slate-500">${p.phone}</p>
+                                    </div>
+                                    <p class="font-black text-emerald-400 italic text-sm">৳ ${p.amount}</p>
+                                </div>`;
+                        }
+                    });
+                    document.getElementById('statMonthly').innerText = '৳ ' + totalMonthly.toLocaleString('bn-BD');
+                });
+
+            // ১. মেম্বার রিকোয়েস্ট (নিবন্ধন)
             db.collection("members").where("status", "==", "pending").onSnapshot(snap => {
-                const list = document.getElementById('pendingMemberList'); list.innerHTML = "";
-                snap.forEach(doc => {
-                    const m = doc.data();
-                    list.innerHTML += `<div class="glass-card p-6 border-b-4 border-yellow-500">
-                        <h4 class="font-black text-lg uppercase tracking-tight">${m.name}</h4>
-                        <p class="text-[9px] text-slate-400 font-bold mb-4">PHONE: ${m.phone} | Trx: ${m.reg_trx || 'N/A'}</p>
-                        <button onclick="approveMember('${m.phone}')" class="w-full btn-gradient py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg">Approve & Active</button>
+                const list = document.getElementById('pendingMemberList');
+                list.innerHTML = "";
+                snap.forEach(async (memberDoc) => {
+                    const m = memberDoc.data();
+                    // এই মেম্বারের পেমেন্ট ডিটেইলস খুঁজে বের করা
+                    const paySnap = await db.collection("payments")
+                        .where("phone", "==", m.phone)
+                        .where("type", "==", "registration")
+                        .limit(1).get();
+                    
+                    let payData = paySnap.empty ? { sender_phone: 'N/A', trxId: 'N/A' } : paySnap.docs[0].data();
+
+                    list.innerHTML += `
+                    <div class="glass-card p-6 border-b-4 border-yellow-500 space-y-3">
+                        <div class="flex justify-between items-start">
+                            <h4 class="font-black text-lg text-white uppercase">${m.name}</h4>
+                            <span class="bg-yellow-500/10 text-yellow-500 text-[8px] font-black px-2 py-1 rounded-full uppercase">REGISTRATION</span>
+                        </div>
+                        <div class="text-[10px] space-y-1 text-slate-400 font-bold uppercase">
+                            <p>Reg Phone: <span class="text-white">${m.phone}</span></p>
+                            <p>Paid From: <span class="text-emerald-400">${payData.sender_phone || 'Unknown'}</span></p>
+                            <p>Trx ID: <span class="text-blue-400">${payData.trxId}</span></p>
+                        </div>
+                        <button onclick="approveMember('${m.phone}')" class="w-full btn-gradient py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Confirm & Active (৳200)</button>
                     </div>`;
                 });
             });
 
-            // ২. পেমেন্ট ভেরিফিকেশন (শুধুমাত্র মাসিক চাঁদা দেখাবে, রেজিস্ট্রেশন নয়)
+            // ২. মাসিক চাঁদা ভেরিফিকেশন
             db.collection("payments").where("status", "==", "pending").where("type", "==", "monthly").onSnapshot(snap => {
-                const list = document.getElementById('pendingPaymentList'); list.innerHTML = "";
+                const list = document.getElementById('pendingPaymentList');
+                list.innerHTML = "";
                 snap.forEach(doc => {
                     const p = doc.data();
-                    list.innerHTML += `<div class="glass-card p-6 border-b-4 border-blue-500">
-                        <h4 class="font-black text-lg uppercase tracking-tight">${p.name}</h4>
-                        <p class="text-[9px] text-slate-400 font-bold mb-4 uppercase">${p.method} | Trx: ${p.trxId}</p>
-                        <div class="text-3xl font-black text-emerald-400 mb-6 italic tracking-tighter">৳ ${p.amount}</div>
-                        <button onclick="approvePayment('${doc.id}', ${p.amount})" class="w-full btn-gradient py-3 rounded-xl font-bold uppercase text-[10px] shadow-lg">Confirm Payment</button>
+                    list.innerHTML += `
+                    <div class="glass-card p-6 border-b-4 border-blue-500 space-y-4">
+                        <div class="flex justify-between items-start">
+                            <h4 class="font-black text-lg text-white uppercase">${p.name}</h4>
+                            <span class="bg-blue-500/10 text-blue-500 text-[8px] font-black px-2 py-1 rounded-full uppercase">MONTHLY DUES</span>
+                        </div>
+                        <div class="text-[10px] space-y-1 text-slate-400 font-bold uppercase">
+                            <p>Acc Phone: <span class="text-white">${p.phone}</span></p>
+                            <p>Paid From: <span class="text-emerald-400">${p.sender_phone || 'N/A'}</span></p>
+                            <p>Trx ID: <span class="text-blue-400">${p.trxId}</span></p>
+                            <p>Method: <span class="text-orange-400">${p.method}</span></p>
+                        </div>
+                        <div class="text-2xl font-black text-emerald-400 italic">৳ ${p.amount}</div>
+                        <button onclick="approvePayment('${doc.id}', ${p.amount})" class="w-full btn-gradient py-3 rounded-xl font-black uppercase text-[10px] shadow-lg">Confirm Payment</button>
                     </div>`;
                 });
             });
 
-            // History Table
+            // ৩. পেমেন্ট হিস্ট্রি টেবিল
             db.collection("payments").where("status", "==", "confirmed").onSnapshot(snap => {
-                const table = document.getElementById('historyTable'); table.innerHTML = "";
-                let historyDocs = []; snap.forEach(doc => { let d = doc.data(); d.id = doc.id; historyDocs.push(d); });
-                historyDocs.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).forEach(p => {
-                    table.innerHTML += `<tr class="border-b border-slate-800/40"><td class="p-6 uppercase">${p.name}</td><td class="p-6 text-emerald-400 italic">৳ ${p.amount}</td><td class="p-6 text-[10px] opacity-50 uppercase">${p.method} | ${p.trxId}</td><td class="p-6 text-[10px] opacity-40">${p.timestamp ? p.timestamp.toDate().toLocaleDateString('bn-BD') : ''}</td></tr>`;
+                const table = document.getElementById('historyTable');
+                table.innerHTML = "";
+                let allDocs = []; snap.forEach(d => allDocs.push(d.data()));
+                allDocs.sort((a,b) => b.timestamp - a.timestamp).forEach(p => {
+                    const date = p.timestamp ? p.timestamp.toDate().toLocaleDateString('bn-BD') : '--';
+                    table.innerHTML += `
+                    <tr class="border-b border-slate-800/40">
+                        <td class="p-6 uppercase">
+                            <p>${p.name}</p><p class="text-[9px] text-slate-500 font-bold">${p.phone}</p>
+                        </td>
+                        <td class="p-6 text-emerald-400 italic">৳ ${p.amount}</td>
+                        <td class="p-6 text-[10px] uppercase font-bold">
+                            <p>${p.sender_phone || 'N/A'}</p><p class="text-blue-400 opacity-60">${p.trxId}</p>
+                        </td>
+                        <td class="p-6"><span class="text-[9px] font-black uppercase ${p.type === 'monthly' ? 'text-blue-500' : 'text-yellow-500'}">${p.type}</span></td>
+                        <td class="p-6 text-[10px] opacity-40 font-bold">${date}</td>
+                    </tr>`;
                 });
             });
 
             // Expense Table
             db.collection("expenses").onSnapshot(snap => {
                 const table = document.getElementById('expenseTable'); table.innerHTML = "";
-                let docs = []; snap.forEach(doc => { let d = doc.data(); d.id = doc.id; docs.push(d); });
-                docs.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).forEach(e => {
-                    table.innerHTML += `<tr class="border-b border-slate-800/40"><td class="p-6">${e.desc}</td><td class="p-6 text-red-400 italic">৳ ${e.amount}</td><td class="p-6 opacity-30 text-[10px] uppercase">${e.timestamp ? e.timestamp.toDate().toLocaleDateString('bn-BD') : ''}</td><td class="p-6 text-right"><button onclick="deleteExp('${e.id}', ${e.amount})" class="text-red-500/20 hover:text-red-500 transition"><i data-lucide="trash-2" class="w-5 h-5"></i></button></td></tr>`;
+                snap.forEach(doc => {
+                    const e = doc.data();
+                    const date = e.timestamp ? e.timestamp.toDate().toLocaleDateString('bn-BD') : '--';
+                    table.innerHTML += `<tr class="border-b border-slate-800/40"><td class="p-6">${e.desc}</td><td class="p-6 text-red-400 italic">৳ ${e.amount}</td><td class="p-6 opacity-30 text-[10px] uppercase">${date}</td><td class="p-6 text-right"><button onclick="deleteExp('${doc.id}', ${e.amount})" class="text-red-500/30 hover:text-red-500 transition"><i data-lucide="trash-2" class="w-5 h-5"></i></button></td></tr>`;
                 });
                 lucide.createIcons();
             });
 
-            // Numbers update
+            // Settings (Payment Numbers)
             db.collection("config").doc("payment_numbers").onSnapshot(doc => {
                 if(doc.exists) {
                     const d = doc.data();
@@ -271,35 +357,29 @@
             });
         }
 
-        // Action Functions
+        // এপ্রুভাল লজিক ফিক্সড
         async function approveMember(phone) {
             if(!confirm("নিবন্ধন নিশ্চিত করতে চান? এটি ২০০ টাকা ফান্ডে যোগ করবে।")) return;
-            const batch = db.batch();
-            
-            // ১. মেম্বার একটিভ
-            batch.update(db.collection("members").doc(phone), { status: 'active' });
-            
-            // ২. ফান্ডে ২০০ টাকা যোগ
-            batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(200) });
-            
-            // ৩. ঐ ইউজারের রেজিস্ট্রেশন পেমেন্টটি খুঁজে বের করে কনফার্ম করা
-            const paySnap = await db.collection("payments")
-                .where("phone", "==", phone)
-                .where("type", "==", "registration")
-                .where("status", "==", "pending")
-                .get();
-            
-            paySnap.forEach(doc => batch.update(db.collection("payments").doc(doc.id), { status: 'confirmed' }));
-            
-            await batch.commit();
-            alert("সদস্য এপ্রুভ হয়েছে এবং ২০০ টাকা ফান্ডে যুক্ত হয়েছে!");
+            try {
+                const batch = db.batch();
+                // ১. স্ট্যাটাস পরিবর্তন
+                batch.update(db.collection("members").doc(phone), { status: 'active' });
+                // ২. ফান্ডে টাকা যোগ
+                batch.set(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(200) }, { merge: true });
+                // ৩. পেমেন্ট রেকর্ড কনফার্ম
+                const paySnap = await db.collection("payments").where("phone", "==", phone).where("type", "==", "registration").get();
+                paySnap.forEach(d => batch.update(db.collection("payments").doc(d.id), { status: 'confirmed' }));
+                
+                await batch.commit();
+                alert("সদস্য এপ্রুভ হয়েছে!");
+            } catch (e) { alert("Error: " + e.message); }
         }
 
         async function approvePayment(pid, amt) {
             if(!confirm("পেমেন্ট নিশ্চিত করতে চান?")) return;
             const batch = db.batch();
             batch.update(db.collection("payments").doc(pid), { status: 'confirmed' });
-            batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(amt) });
+            batch.set(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(amt) }, { merge: true });
             await batch.commit();
             alert("পেমেন্ট সফলভাবে যোগ করা হয়েছে!");
         }
@@ -309,16 +389,15 @@
             const amt = parseFloat(document.getElementById('eAmt').value);
             const batch = db.batch();
             batch.set(db.collection("expenses").doc(), { desc: document.getElementById('eDesc').value, amount: amt, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-            batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(-amt), expenses: firebase.firestore.FieldValue.increment(amt) });
-            await batch.commit();
-            e.target.reset();
+            batch.set(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(-amt), expenses: firebase.firestore.FieldValue.increment(amt) }, { merge: true });
+            await batch.commit(); e.target.reset();
         };
 
         async function deleteExp(eid, amt) {
             if(!confirm("মুছে ফেলতে চান?")) return;
             const batch = db.batch();
             batch.delete(db.collection("expenses").doc(eid));
-            batch.update(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(amt), expenses: firebase.firestore.FieldValue.increment(-amt) });
+            batch.set(db.collection("stats").doc("summary"), { fund: firebase.firestore.FieldValue.increment(amt), expenses: firebase.firestore.FieldValue.increment(-amt) }, { merge: true });
             await batch.commit();
         }
 
@@ -327,7 +406,6 @@
             await db.collection("config").doc("payment_numbers").set({ bkash: document.getElementById('upBk').value, nagad: document.getElementById('upNg').value, rocket: document.getElementById('upRk').value }, { merge: true });
             alert("নম্বর সেভ হয়েছে!");
         };
-
     </script>
 </body>
 </html>
